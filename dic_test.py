@@ -1,15 +1,13 @@
 import pandas as pd
 import datetime
-#import pandas.io.data
 from pandas_datareader import data, wb
 import csv
+import json
 
 out= open("testfile.csv", "rb")
 data = csv.reader(out)
-#df = pd.read_csv('testfile.csv')
-data = [[row[0],row[1] + row[2],row[3] + row[4], row[5],row[6]] for row in data]
+data = [[row[0],row[1] + "_" + row[2],row[3] +"_" + row[4], row[5],row[6]] for row in data]
 out.close()
-print data
 
 out=open("data.csv", "wb")
 output = csv.writer(out)
@@ -18,19 +16,31 @@ for row in data:
     output.writerow(row)
 
 out.close()
-
 df = pd.read_csv('data.csv')
-for DateDpt, DateAr in df.iteritems():
-	df.DateDpt = pd.to_datetime(df.DateDpt, format='%Y-%m-%d')
-	df.DateAr = pd.to_datetime(df.DateAr, format='%Y-%m-%d')
-print df
 
+df.DateDpt = pd.to_datetime(df.DateDpt)
+df.DateAr = pd.to_datetime(df.DateAr)
+df = df.set_index('DateAr')
+new_df = pd.DataFrame()
+for i, data in df.iterrows():
+    data = data.to_frame().transpose()
+    data = data.reindex(pd.date_range(start=data.index[0], end=data.DateDpt[0])).fillna(method='ffill').reset_index().rename(columns={'index': 'DateAr'})
+    new_df = pd.concat([new_df, data])
 
-#d= df.set_index('Date').T.to_dict().values()
+new_df = new_df[['AuthorID', 'ArCity_ArCountry', 'DptCity_DptCountry', 'DateAr', 'DateDpt']]
 
+#print new_df
+json_dict = {}
 
+for arrival_date, data in new_df.groupby('DateAr'):
+    matching_dates = data[data.DateDpt==arrival_date]
+    not_matching_dates = data[data.DateDpt!=arrival_date]
+    json_dict[arrival_date.strftime('%Y-%m-%d')] = {}
+    if not matching_dates.empty:
+        for city, flights in matching_dates.groupby('ArCity_ArCountry'):
+            json_dict[arrival_date.strftime('%Y-%m-%d')][city] = [str(v) for v in flights.AuthorID.to_dict().values()]
+    if not not_matching_dates.empty:
+        for city, flights in not_matching_dates.groupby('DptCity_DptCountry'):
+            json_dict[arrival_date.strftime('%Y-%m-%d')][city] = [str(v) for v in flights.AuthorID.to_dict().values()]
 
-	
-#Use collections.defaultdict for this. You can initialize a dictionary like "travel_dict = defaultdict(lambda: defaultdict(list))", then add values like "travel_dict["ParisFrance"]["2001-02-01"].append(1922)" 
-
-
+print(json.dumps(json_dict, indent=4, sort_keys=True))
